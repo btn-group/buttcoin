@@ -108,14 +108,6 @@ pub enum HandleMsg {
 #[derive(Serialize, Deserialize, JsonSchema, Debug)]
 #[serde(rename_all = "snake_case")]
 pub enum HandleAnswer {
-    // Native
-    Deposit {
-        status: ResponseStatus,
-    },
-    Redeem {
-        status: ResponseStatus,
-    },
-
     // Base
     Transfer {
         status: ResponseStatus,
