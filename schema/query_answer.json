@@ -202,6 +202,7 @@
       "required": [
         "block_height",
         "coins",
+        "from",
         "id",
         "receiver",
         "sender"
@@ -216,14 +217,7 @@
           "$ref": "#/definitions/Coin"
         },
         "from": {
-          "anyOf": [
-            {
-              "$ref": "#/definitions/HumanAddr"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "$ref": "#/definitions/HumanAddr"
         },
         "id": {
           "type": "integer",

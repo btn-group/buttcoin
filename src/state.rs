@@ -36,7 +36,7 @@ pub const PREFIX_RECEIVERS: &[u8] = b"receivers";
 pub struct Tx {
     pub id: u64,
     pub block_height: u64,
-    pub from: Option<HumanAddr>,
+    pub from: HumanAddr,
     pub sender: HumanAddr,
     pub receiver: HumanAddr,
     pub coins: Coin,
@@ -44,16 +44,10 @@ pub struct Tx {
 
 impl Tx {
     pub fn into_stored<A: Api>(self, api: &A) -> StdResult<StoredTx> {
-        let from = if self.from.is_none() {
-            None
-        } else {
-            Some(api.canonical_address(&self.from.unwrap())?)
-        };
-
         let tx = StoredTx {
             id: self.id,
             block_height: self.block_height,
-            from: from,
+            from: api.canonical_address(&self.from)?,
             sender: api.canonical_address(&self.sender)?,
             receiver: api.canonical_address(&self.receiver)?,
             coins: self.coins,
@@ -66,7 +60,7 @@ impl Tx {
 pub struct StoredTx {
     pub id: u64,
     pub block_height: u64,
-    pub from: Option<CanonicalAddr>,
+    pub from: CanonicalAddr,
     pub sender: CanonicalAddr,
     pub receiver: CanonicalAddr,
     pub coins: Coin,
@@ -74,15 +68,10 @@ pub struct StoredTx {
 
 impl StoredTx {
     pub fn into_humanized<A: Api>(self, api: &A) -> StdResult<Tx> {
-        let from = if self.from.is_none() {
-            None
-        } else {
-            Some(api.human_address(&self.from.unwrap())?)
-        };
         let tx = Tx {
             id: self.id,
             block_height: self.block_height,
-            from: from,
+            from: api.human_address(&self.from)?,
             sender: api.human_address(&self.sender)?,
             receiver: api.human_address(&self.receiver)?,
             coins: self.coins,
@@ -94,7 +83,7 @@ impl StoredTx {
 pub fn store_transfer<S: Storage>(
     store: &mut S,
     block_height: u64,
-    owner: Option<CanonicalAddr>,
+    owner: &CanonicalAddr,
     sender: &CanonicalAddr,
     receiver: &CanonicalAddr,
     amount: Uint128,
@@ -114,8 +103,8 @@ pub fn store_transfer<S: Storage>(
         coins,
     };
 
-    if owner.is_some() && &owner.clone().unwrap() != sender {
-        append_tx(store, tx.clone(), &owner.unwrap())?;
+    if owner != sender {
+        append_tx(store, tx.clone(), &owner)?;
     }
     append_tx(store, tx.clone(), &sender)?;
     append_tx(store, tx, &receiver)?;
