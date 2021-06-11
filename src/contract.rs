@@ -23,23 +23,7 @@ pub fn init<S: Storage, A: Api, Q: Querier>(
     env: Env,
     msg: InitMsg,
 ) -> StdResult<InitResponse> {
-    let mut total_supply: u128 = 0;
-    {
-        let mut balances = Balances::from_storage(&mut deps.storage);
-        let initial_balances = msg.initial_balances.unwrap_or_default();
-        for balance in initial_balances {
-            let balance_address = deps.api.canonical_address(&balance.address)?;
-            let amount = balance.amount.u128();
-            balances.set_account_balance(&balance_address, amount);
-            if let Some(new_total_supply) = total_supply.checked_add(amount) {
-                total_supply = new_total_supply;
-            } else {
-                return Err(StdError::generic_err(
-                    "The sum of all initial balances exceeds the maximum possible total supply",
-                ));
-            }
-        }
-    }
+    let total_supply: u128 = 0;
 
     // Check name, symbol, decimals
     if !is_valid_name(&msg.name) {
@@ -722,9 +706,7 @@ mod tests {
 
     // Helper functions
 
-    fn init_helper(
-        initial_balances: Vec<InitialBalance>,
-    ) -> (
+    fn init_helper() -> (
         StdResult<InitResponse>,
         Extern<MockStorage, MockApi, MockQuerier>,
     ) {
@@ -736,7 +718,6 @@ mod tests {
             admin: Some(HumanAddr("admin".to_string())),
             symbol: "SECSEC".to_string(),
             decimals: 8,
-            initial_balances: Some(initial_balances),
             prng_seed: Binary::from("lolz fun yay".as_bytes()),
         };
 
@@ -782,15 +763,12 @@ mod tests {
 
     #[test]
     fn test_init_sanity() {
-        let (init_result, deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("lebron".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, deps) = init_helper();
         assert_eq!(init_result.unwrap(), InitResponse::default());
 
         let config = ReadonlyConfig::from_storage(&deps.storage);
         let constants = config.constants().unwrap();
-        assert_eq!(config.total_supply(), 5000);
+        assert_eq!(config.total_supply(), 0);
         assert_eq!(constants.name, "sec-sec".to_string());
         assert_eq!(constants.admin, HumanAddr("admin".to_string()));
         assert_eq!(constants.symbol, "SECSEC".to_string());
@@ -801,48 +779,24 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_total_supply_overflow() {
-        let (init_result, _deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("lebron".to_string()),
-            amount: Uint128(u128::max_value()),
-        }]);
-        assert!(
-            init_result.is_ok(),
-            "Init failed: {}",
-            init_result.err().unwrap()
-        );
-
-        let (init_result, _deps) = init_helper(vec![
-            InitialBalance {
-                address: HumanAddr("lebron".to_string()),
-                amount: Uint128(u128::max_value()),
-            },
-            InitialBalance {
-                address: HumanAddr("giannis".to_string()),
-                amount: Uint128(1),
-            },
-        ]);
-        let error = extract_error_msg(init_result);
-        assert_eq!(
-            error,
-            "The sum of all initial balances exceeds the maximum possible total supply"
-        );
-    }
-
     // Handle tests
 
     #[test]
     fn test_handle_transfer() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::Transfer {
             recipient: HumanAddr("alice".to_string()),
@@ -878,15 +832,20 @@ mod tests {
 
     #[test]
     fn test_handle_send() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::RegisterReceive {
             code_hash: "this_is_a_hash_of_a_code".to_string(),
@@ -924,15 +883,20 @@ mod tests {
 
     #[test]
     fn test_handle_register_receive() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::RegisterReceive {
             code_hash: "this_is_a_hash_of_a_code".to_string(),
@@ -950,15 +914,20 @@ mod tests {
 
     #[test]
     fn test_handle_create_viewing_key() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::CreateViewingKey {
             entropy: "".to_string(),
@@ -986,15 +955,20 @@ mod tests {
 
     #[test]
     fn test_handle_set_viewing_key() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         // Set VK
         let handle_msg = HandleMsg::SetViewingKey {
@@ -1035,15 +1009,20 @@ mod tests {
 
     #[test]
     fn test_handle_transfer_from() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         // Transfer before allowance
         let handle_msg = HandleMsg::TransferFrom {
@@ -1158,15 +1137,20 @@ mod tests {
 
     #[test]
     fn test_handle_send_from() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         // Send before allowance
         let handle_msg = HandleMsg::SendFrom {
@@ -1356,15 +1340,20 @@ mod tests {
 
     #[test]
     fn test_handle_increase_allowance() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::IncreaseAllowance {
             spender: HumanAddr("alice".to_string()),
@@ -1422,15 +1411,20 @@ mod tests {
 
     #[test]
     fn test_handle_change_admin() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::ChangeAdmin {
             address: HumanAddr("bob".to_string()),
@@ -1454,15 +1448,20 @@ mod tests {
 
     #[test]
     fn test_authenticated_queries() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("giannis".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("giannis".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let no_vk_yet_query_msg = QueryMsg::Balance {
             address: HumanAddr("giannis".to_string()),
@@ -1551,6 +1550,28 @@ mod tests {
         let init_decimals = 8;
         let init_supply = Uint128(5000);
 
+        let query_msg = QueryMsg::Admin {};
+        let query_result = query(&deps, query_msg);
+        assert!(
+            query_result.is_ok(),
+            "Init failed: {}",
+            query_result.err().unwrap()
+        );
+        let query_answer: QueryAnswer = from_binary(&query_result.unwrap()).unwrap();
+        match query_answer {
+            QueryAnswer::Admin { address } => {
+                assert_eq!(address, init_admin);
+            }
+            _ => panic!("unexpected"),
+        }
+    }
+
+    #[test]
+    fn test_query_token_info() {
+        let init_name = "sec-sec".to_string();
+        let init_admin = HumanAddr("admin".to_string());
+        let init_symbol = "SECSEC".to_string();
+        let init_decimals = 8;
         let mut deps = mock_dependencies(20, &[]);
         let env = mock_env("instantiator", &[]);
         let init_msg = InitMsg {
@@ -1558,10 +1579,6 @@ mod tests {
             admin: Some(init_admin.clone()),
             symbol: init_symbol.clone(),
             decimals: init_decimals.clone(),
-            initial_balances: Some(vec![InitialBalance {
-                address: HumanAddr("giannis".to_string()),
-                amount: init_supply,
-            }]),
             prng_seed: Binary::from("lolz fun yay".as_bytes()),
         };
         let init_result = init(&mut deps, env, init_msg);
@@ -1570,6 +1587,14 @@ mod tests {
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("giannis".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let query_msg = QueryMsg::TokenInfo {};
         let query_result = query(&deps, query_msg);
@@ -1597,15 +1622,20 @@ mod tests {
 
     #[test]
     fn test_query_allowance() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("giannis".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("giannis".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::IncreaseAllowance {
             spender: HumanAddr("lebron".to_string()),
@@ -1706,15 +1736,20 @@ mod tests {
 
     #[test]
     fn test_query_balance() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::SetViewingKey {
             key: "key".to_string(),
@@ -1753,15 +1788,20 @@ mod tests {
 
     #[test]
     fn test_query_transfer_history() {
-        let (init_result, mut deps) = init_helper(vec![InitialBalance {
-            address: HumanAddr("bob".to_string()),
-            amount: Uint128(5000),
-        }]);
+        let (init_result, mut deps) = init_helper();
         assert!(
             init_result.is_ok(),
             "Init failed: {}",
             init_result.err().unwrap()
         );
+        let mint_amount: u128 = 5000;
+        let handle_msg = HandleMsg::Mint {
+            recipient: HumanAddr("bob".to_string()),
+            amount: Uint128(mint_amount),
+            memo: Some("This is a private memo".to_string()),
+            padding: None,
+        };
+        let _handle_result = handle(&mut deps, mock_env("admin", &[]), handle_msg);
 
         let handle_msg = HandleMsg::SetViewingKey {
             key: "key".to_string(),
